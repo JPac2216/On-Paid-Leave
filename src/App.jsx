@@ -9,7 +9,11 @@ import {
 } from "@tauri-apps/plugin-notification";
 
 // Send a native desktop notification through Tauri and attempt to focus the app window when clicked.
-async function showDesktopNotification(message) {
+async function showDesktopNotification(message, shouldSuppress = false) {
+  if (shouldSuppress) {
+    console.log("notification: suppressed by user toggle");
+    return;
+  }
   try {
     const hasPermission = await isPermissionGranted();
     console.log("notification: isPermissionGranted ->", hasPermission);
@@ -78,6 +82,7 @@ function App() {
   const [redactedIds, setRedactedIds] = useState([]);
   const [confirmed, setConfirmed] = useState(false);
   const [confirmedPayload, setConfirmedPayload] = useState(null);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const isObfuscatedRef = useRef(false);
 
   // Wrap state updates for obfuscation so the ref stays in sync.
@@ -323,7 +328,16 @@ function App() {
         </button>
       </div>
 
-      <button type="button" onClick={() => showDesktopNotification("Sensitive data detected on clipboard. Open Safe Paste for more information.")}>
+      <label style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: "0.5rem", marginTop: "1rem" }}>
+        <input
+          type="checkbox"
+          checked={!notificationsEnabled}
+          onChange={() => setNotificationsEnabled((value) => !value)}
+        />
+        Disable desktop notifications
+      </label>
+
+      <button type="button" onClick={() => showDesktopNotification("Sensitive data detected on clipboard. Open Safe Paste for more information.", !notificationsEnabled)}>
         Show desktop notification
       </button>
     </main>
