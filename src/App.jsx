@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import "./App.css";
 import {
@@ -47,69 +48,46 @@ async function showDesktopNotification(message, shouldSuppress = false) {
 }
 
 function App() {
-  // Placeholder backend payload used until the real backend event is available.
-  const placeholderPayload = {
-    scan_id: "a1b2c3",
-    full_text:
-      "export const key = \"sk_live_4eC39HqLyjWDarhtT657j41F\"\ncard 4111111111111111",
-    max_severity: "CRITICAL",
-    detections: [
-      {
-        id: "stripe_api_key",
-        name: "Stripe Live API Key",
-        category: "api_key",
-        severity: "CRITICAL",
-        matched_text: "sk_live_4eC39HqLyjWDarhtT657j41F",
-      },
-      {
-        id: "credit_card_number",
-        name: "Credit Card Number",
-        category: "financial",
-        severity: "HIGH",
-        matched_text: "4111111111111111",
-      },
-    ],
-    timestamp: "2026-07-08T13:40:00Z",
-  };
-
   // Component state for the current backend text, the detections, and the displayed version.
-  const [fullText, setFullText] = useState(placeholderPayload.full_text);
-  const [detections, setDetections] = useState(placeholderPayload.detections);
-  const [displayText, setDisplayText] = useState(placeholderPayload.full_text);
+  const [fullText, setFullText] = useState("");
+  const [detections, setDetections] = useState([]);
+  const [displayText, setDisplayText] = useState("");
   const [isObfuscated, setIsObfuscated] = useState(false);
   const [redactedIds, setRedactedIds] = useState([]);
   const [confirmed, setConfirmed] = useState(false);
-  const [confirmedPayload, setConfirmedPayload] = useState(null);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
-  const isObfuscatedRef = useRef(false);
+  // Set right before we write our own redacted text back to the clipboard, so
+  // the resulting re-scan updates the underlying text without reverting the
+  // confirmed (no-highlight) view or alerting the user to their own action.
+  const selfTriggeredUpdateRef = useRef(false);
 
-  // Wrap state updates for obfuscation so the ref stays in sync.
-  const setObfuscated = (value) => {
-    isObfuscatedRef.current = value;
-    setIsObfuscated(value);
-  };
-
+  // Listen for backend scan events, update the displayed clipboard content, and alert the user.
   useEffect(() => {
-    // Initialize state with placeholder backend payload values.
-    setFullText(placeholderPayload.full_text);
-    setDetections(placeholderPayload.detections);
-    setDisplayText(placeholderPayload.full_text);
-    setIsObfuscated(false);
-    setRedactedIds([]);
-    setConfirmed(false);
-    setConfirmedPayload(null);
-
-    // Listen for backend events that provide full_text and detections.
-    const unlisten = listen("backend-redaction-event", (event) => {
+    const unlisten = listen("sensitive-content-detected", (event) => {
       const payload = event.payload || {};
       if (payload.full_text) {
         setFullText(payload.full_text);
-        if (!isObfuscatedRef.current) {
-          setDisplayText(payload.full_text);
-        }
+        setDisplayText(payload.full_text);
       }
       if (payload.detections) {
         setDetections(payload.detections);
+      }
+
+      if (selfTriggeredUpdateRef.current) {
+        selfTriggeredUpdateRef.current = false;
+      } else {
+        // Each new detection is fresh clipboard content, so any redaction/confirm
+        // state from a previous scan no longer applies.
+        setIsObfuscated(false);
+        setRedactedIds([]);
+        setConfirmed(false);
+
+        const severityNote = payload.max_severity ? ` (${payload.max_severity})` : "";
+        const matchCount = payload.detections?.length ?? 0;
+        showDesktopNotification(
+          `Sensitive data detected on clipboard${severityNote}: ${matchCount} match(es) found. Open Safe Paste for more information.`,
+          !notificationsEnabled
+        );
       }
     });
 
@@ -117,22 +95,26 @@ function App() {
     return () => {
       unlisten.then((stop) => stop());
     };
-  }, []);
+  }, [notificationsEnabled]);
 
   const locateDetections = (text, items) => {
-    let searchPosition = 0;
+    // Detections arrive in pattern-declaration order, not in the order they
+    // appear in the text, so each distinct matched string needs its own
+    // search cursor rather than one shared, ever-advancing position.
+    const nextSearchIndexByText = new Map();
     const matches = [];
 
     items.forEach((item) => {
       const matchedText = item.matched_text || "";
-      const start = text.indexOf(matchedText, searchPosition);
+      const searchFrom = nextSearchIndexByText.get(matchedText) ?? 0;
+      const start = text.indexOf(matchedText, searchFrom);
       if (start !== -1) {
         matches.push({
           ...item,
           start,
           end: start + matchedText.length,
         });
-        searchPosition = start + matchedText.length;
+        nextSearchIndexByText.set(matchedText, start + matchedText.length);
       }
     });
 
@@ -227,22 +209,23 @@ function App() {
 
       const isRedactedItem = redactedIds.includes(detection.id);
       const renderedDetection = isRedactedItem ? (
-        <span
+        <mark
           key={`detection-${index}`}
+          title={`${detection.name} · Redacted`}
           style={{
+            backgroundColor: "#c8e6c9",
             padding: "0 0.2rem",
-            color: "inherit",
           }}
         >
           [{detection.name}]
-        </span>
+        </mark>
       ) : (
         <mark
           key={`detection-${index}`}
           title={`${detection.name} · Severity: ${detection.severity}`}
           onClick={() => handleItemClick(detection.id)}
           style={{
-            backgroundColor: "#ffe082",
+            backgroundColor: "#ffcdd2",
             padding: "0 0.2rem",
             cursor: "pointer",
           }}
@@ -267,78 +250,104 @@ function App() {
   const handleChoice = () => {
     const redacted = getRedactedText(fullText, detections);
     setDisplayText(redacted);
-    setObfuscated(true);
+    setIsObfuscated(true);
     console.log("Frontend ready to notify backend that redacted text was accepted.");
   };
 
   const handleReverseAll = () => {
     setDisplayText(fullText);
-    setObfuscated(false);
+    setIsObfuscated(false);
     setRedactedIds([]);
     setConfirmed(false);
-    setConfirmedPayload(null);
     console.log("All redactions reversed.");
   };
 
-  const handleConfirm = () => {
+  // Send the fully adjusted clipboard text to the backend, which writes it
+  // back to the OS clipboard in place of the original sensitive content.
+  const handleConfirm = async () => {
     const updatedText = buildCurrentText();
-    const changedItems = locateDetections(fullText, detections)
-      .filter((item) => redactedIds.includes(item.id))
-      .map((item) => ({
-        matched_text: item.matched_text,
-        updated_text: `[${item.name}]`,
-      }));
-
-    const payload = {
-      changes: changedItems,
-    };
-
     setConfirmed(true);
-    setConfirmedPayload(payload);
 
-    console.log("Prepared payload for backend:", payload);
-    console.log(JSON.stringify(payload, null, 2));
+    // The backend dedups clipboard changes by content hash, so it only
+    // re-scans (and only emits an event) when the written-back text both
+    // differs from what's already on the clipboard AND still contains a
+    // match. Check the actual final text rather than redactedIds bookkeeping,
+    // since "Redact all" replaces every match via a separate code path that
+    // doesn't go through redactedIds at all.
+    const textActuallyChanged = updatedText !== fullText;
+    const willStillContainMatches = detections.some((item) =>
+      updatedText.includes(item.matched_text)
+    );
+    selfTriggeredUpdateRef.current = textActuallyChanged && willStillContainMatches;
+
+    try {
+      await invoke("set_clipboard_text", { text: updatedText });
+      console.log("Sent adjusted clipboard text to backend.");
+    } catch (err) {
+      console.error("Failed to update clipboard via backend:", err);
+    }
   };
 
   return (
-    <main className="container">
-      <section
+    <>
+      <header
         style={{
-          marginBottom: "1rem",
+          backgroundColor: "#001F45",
+          color: "#ffffff",
           padding: "1rem",
-          border: "1px solid #ddd",
-          borderRadius: "8px",
+          textAlign: "center",
         }}
       >
-        <h2>Current Clipboard:</h2>
-        <p>{renderMessageWithHighlight()}</p>
-      </section>
+        <h1 style={{ margin: 0 }}>SafePaste</h1>
+      </header>
 
-      <div style={{ display: "flex", justifyContent: "center", gap: "1rem", marginTop: "1rem" }}>
-        <button type="button" onClick={handleChoice}>
-          Redact all highlighted text
-        </button>
-        <button type="button" onClick={handleReverseAll}>
-          Reverse all changes
-        </button>
-        <button type="button" onClick={handleConfirm}>
-          Confirm changes
-        </button>
-      </div>
+      <main className="container">
+        <section
+          style={{
+            marginBottom: "1rem",
+            padding: "1rem",
+            border: "1px solid #ddd",
+            borderRadius: "8px",
+          }}
+        >
+          <h2>Current Clipboard:</h2>
+          <p>{renderMessageWithHighlight()}</p>
+        </section>
 
-      <label style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: "0.5rem", marginTop: "1rem" }}>
-        <input
-          type="checkbox"
-          checked={!notificationsEnabled}
-          onChange={() => setNotificationsEnabled((value) => !value)}
-        />
-        Disable desktop notifications
-      </label>
+        <div style={{ display: "flex", justifyContent: "center", gap: "1rem", marginTop: "1rem" }}>
+          <button type="button" onClick={handleChoice} style={{ backgroundColor: "#ffffff", color: "#0f0f0f" }}>
+            Redact all highlighted text
+          </button>
+          <button type="button" onClick={handleReverseAll} style={{ backgroundColor: "#ffffff", color: "#0f0f0f" }}>
+            Reverse all changes
+          </button>
+        </div>
 
-      <button type="button" onClick={() => showDesktopNotification("Sensitive data detected on clipboard. Open Safe Paste for more information.", !notificationsEnabled)}>
-        Show desktop notification
-      </button>
-    </main>
+        <div style={{ display: "flex", justifyContent: "center", marginTop: "1rem" }}>
+          <button
+            type="button"
+            onClick={handleConfirm}
+            style={{
+              backgroundColor: "#007BC3",
+              color: "#ffffff",
+              fontSize: "1.15em",
+              padding: "0.75em 1.5em",
+            }}
+          >
+            Confirm and copy
+          </button>
+        </div>
+
+        <label style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: "0.5rem", marginTop: "1.75rem" }}>
+          <input
+            type="checkbox"
+            checked={!notificationsEnabled}
+            onChange={() => setNotificationsEnabled((value) => !value)}
+          />
+          Disable desktop notifications
+        </label>
+      </main>
+    </>
   );
 }
 
