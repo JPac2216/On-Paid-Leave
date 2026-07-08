@@ -2853,6 +2853,8 @@ name = "safe-paste"
 version = "0.1.0"
 dependencies = [
  "arboard",
+ "once_cell",
+ "regex",
  "serde",
  "serde_json",
  "tauri",

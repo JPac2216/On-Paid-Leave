@@ -1,4 +1,5 @@
 mod clipboard;
+pub mod patterns;
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
