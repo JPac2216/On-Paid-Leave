@@ -2,7 +2,7 @@
 
 **Last Updated:** July 2026  
 **Status:** Planning Phase → Ready for Development  
-**Target Release:** 4 weeks
+**Format:** 24-hour Hackathon Build
 
 ---
 
@@ -37,6 +37,8 @@
 - IT-deployable via MDM with optional centralized audit logging
 
 **MVP:** System-wide clipboard monitoring with instant toast notifications + expandable modal showing highlighted sensitive text.
+
+**Note:** This plan is scoped for a 24-hour hackathon, not a production release. No database — config/patterns load from JSON, session activity kept in-memory only. Cut anything not needed for a live demo.
 
 ---
 
@@ -94,7 +96,7 @@ Toast notification appears (bottom-right, 5 second auto-dismiss)
 ### User Experience
 
 - **Non-blocking:** Notification appears but doesn't prevent paste immediately
-- **User agency:** Users can override warnings (logged for audit)
+- **User agency:** Users can override warnings (visible in session activity)
 - **Transparent:** Users see exactly what was detected and why
 
 ---
@@ -116,7 +118,7 @@ Toast notification appears (bottom-right, 5 second auto-dismiss)
 │  │  ├─ Toast notifications           │  │
 │  │  ├─ Expandable modal              │  │
 │  │  ├─ Settings panel                │  │
-│  │  ├─ Audit log viewer              │  │
+│  │  ├─ Session activity log          │  │
 │  │  └─ System tray UI                │  │
 │  │                                   │  │
 │  ├───────────────────────────────────┤  │
@@ -125,13 +127,12 @@ Toast notification appears (bottom-right, 5 second auto-dismiss)
 │  │  ├─ Clipboard listener            │  │
 │  │  ├─ Pattern matching engine       │  │
 │  │  ├─ Decision logic                │  │
-│  │  ├─ Audit logger (SQLite)         │  │
 │  │  └─ IPC bridge to React           │  │
 │  │                                   │  │
-│  │  Storage (SQLite)                 │  │
-│  │  ├─ Audit logs                    │  │
-│  │  ├─ User config/allowlists        │  │
-│  │  └─ Rule cache                    │  │
+│  │  Config (JSON files, in-memory)   │  │
+│  │  ├─ Patterns config               │  │
+│  │  ├─ User settings/allowlists      │  │
+│  │  └─ Session activity (in-memory)  │  │
 │  │                                   │  │
 │  └───────────────────────────────────┘  │
 │                                         │
@@ -158,7 +159,6 @@ Toast notification appears (bottom-right, 5 second auto-dismiss)
 - Clipboard listener (arboard crate, platform-specific)
 - Change detection (hashing to avoid re-scanning)
 - Pattern matching engine (regex library)
-- Audit logger (SQLite)
 - IPC bridge (Tauri commands + events)
 - System tray integration
 
@@ -167,15 +167,14 @@ Toast notification appears (bottom-right, 5 second auto-dismiss)
 - Toast notification system
 - Expandable modal with highlighted text
 - Settings & configuration panel
-- Audit log viewer
+- Session activity log (in-memory, cleared on quit)
 - System tray icon
 
-**Storage (SQLite):**
+**Storage (JSON files, no DB):**
 
-- Audit logs (what, when, where, severity)
-- User preferences (enable/disable, sensitivity level)
-- Allowlist/blocklist entries
-- Config snapshots
+- User preferences (enable/disable, sensitivity level) — `config/user-config.json`
+- Allowlist/blocklist entries — `config/allowlist.json`
+- Pattern definitions — `config/patterns.json`
 
 ---
 
@@ -200,11 +199,10 @@ Toast notification appears (bottom-right, 5 second auto-dismiss)
 | **Clipboard**         | arboard               | Cross-platform, well-maintained                          |
 | **Async Runtime**     | Tokio                 | Non-blocking clipboard monitoring                        |
 | **Pattern Matching**  | regex crate           | Fast, safe, standard Rust                                |
-| **Database**          | SQLite                | Lightweight, file-based, zero-config                     |
+| **Storage**           | JSON files            | No DB needed for hackathon scope, zero-config             |
 | **IPC**               | Tauri commands/events | Built-in, type-safe                                      |
 | **Build Tool**        | Vite                  | Fast bundling, HMR for React                             |
-| **Testing**           | Rust tests + Jest     | Unit tests + integration tests                           |
-| **CI/CD**             | GitHub Actions        | Free, built-in for GitHub repos                          |
+| **Testing**           | Manual + smoke test   | No time for full suite in 24hrs, verify golden path       |
 
 ### Dependencies Summary
 
@@ -217,7 +215,6 @@ regex = "1.x"
 arboard = "3.x"
 serde = "1.x"
 serde_json = "1.x"
-sqlx = "0.7.x" (or rusqlite)
 chrono = "0.4.x"
 ```
 
@@ -453,8 +450,8 @@ Safe Paste Settings
 │  ├─ Internal Jira: Loose (minimal warnings)
 │  └─ [+ Add app]
 │
-├─ Audit Log
-│  └─ [View audit log] [Clear logs] [Export CSV]
+├─ Session Activity
+│  └─ [View activity] [Clear] (in-memory, resets on quit)
 │
 └─ About & Updates
    ├─ Version: 1.0.0
@@ -487,7 +484,7 @@ Safe Paste Settings
 - [x] Toast notifications (bottom-right)
 - [x] Expandable modal with highlighted text
 - [x] User actions: Allow, Block, Edit
-- [x] Local audit logging (SQLite)
+- [x] Session activity view (in-memory, no persistence)
 - [x] Settings panel (enable/disable, sensitivity)
 - [x] System tray integration
 - [x] Allowlist/blocklist basic support
@@ -524,7 +521,6 @@ Safe Paste Settings
 
 - Clipboard listener + change detection
 - IPC bridge (Tauri commands/events)
-- Audit logger (SQLite)
 - System tray integration
 - Performance optimization
 
@@ -547,7 +543,7 @@ Safe Paste Settings
 **Person 4: Settings & Config UI**
 
 - Settings panel (enable/disable, sensitivity)
-- Audit log viewer (table, search, export)
+- Session activity view (in-memory list, no persistence)
 - Pattern management (view/edit/add)
 - Allowlist/blocklist UI
 - App-specific rules
@@ -566,11 +562,10 @@ Safe Paste Settings
 ```
 Person 1 (Clipboard)
 ├─ Defines: IPC message format
-├─ Blocks: Person 3 (until event structure set)
-└─ Blocks: Person 4 (until SQLite schema set)
+└─ Blocks: Person 3 (until event structure set)
 
 Person 2 (Patterns)
-├─ Defines: Pattern config format
+├─ Defines: Pattern config format (JSON)
 └─ Blocks: Person 4 (until pattern structure set)
 
 Person 3 (UI)
@@ -578,7 +573,6 @@ Person 3 (UI)
 └─ Can mock initially
 
 Person 4 (Config/Settings)
-├─ Depends on: Person 1 (SQLite schema)
 └─ Depends on: Person 2 (pattern format)
 
 Person 5 (Testing)
@@ -586,53 +580,56 @@ Person 5 (Testing)
 └─ Runs in parallel once testable
 ```
 
-### Work Allocation by Sprint
+### Work Allocation by Hour Block
 
-**Sprint 1 (Week 1): Setup + Core**
+**Hour 0-2: Setup + Scaffolding**
 
-| Person | Task                               | Days |
-| ------ | ---------------------------------- | ---- |
-| 1      | Tauri clipboard listener (arboard) | 3    |
-| 1      | Basic IPC to React                 | 2    |
-| 2      | Pattern library v1 (20 patterns)   | 3    |
-| 2      | Severity calculator                | 2    |
-| 3      | Toast + Modal components (mock)    | 4    |
-| 4      | Config schema planning (meetings)  | 1    |
-| 5      | CI/CD setup (GitHub Actions)       | 3    |
+| Person | Task                                       |
+| ------ | ------------------------------------------- |
+| 1      | Tauri scaffold, clipboard listener POC       |
+| 2      | Pattern library draft (5-10 core patterns)   |
+| 3      | Toast + Modal components (mock data)         |
+| 4      | Settings panel shell (mock data)             |
+| 5      | Repo setup, agree IPC/pattern JSON format    |
 
-**Sprint 2 (Week 2): Integration**
+**Hour 2-8: Core Loop**
 
-| Person | Task                      | Days |
-| ------ | ------------------------- | ---- |
-| 1      | Audit logger (SQLite)     | 3    |
-| 1      | System tray icon          | 2    |
-| 2      | Hot-reload pattern config | 3    |
-| 3      | Connect UI to real events | 3    |
-| 3      | Text highlighting logic   | 2    |
-| 4      | Settings UI + config R/W  | 5    |
-| 5      | Unit tests (patterns)     | 3    |
-| 5      | E2E framework setup       | 2    |
+| Person | Task                                      |
+| ------ | ------------------------------------------ |
+| 1      | Clipboard listener + IPC events to React   |
+| 2      | Pattern matching engine + severity calc    |
+| 3      | Connect toast/modal to real IPC events     |
+| 4      | Settings read/write to JSON config         |
+| 5      | Smoke-test core loop as it lands           |
 
-**Sprint 3 (Week 3): Polish + Testing**
+**Hour 8-14: Integration**
 
-| Person | Task                           | Days |
-| ------ | ------------------------------ | ---- |
-| 1      | Performance optimization       | 2    |
-| 2      | Edge cases + fine-tuning       | 2    |
-| 3      | Animation polish               | 2    |
-| 4      | Audit log viewer               | 2    |
-| 5      | Cross-platform testing         | 3    |
-| 5      | Build + sign installers        | 3    |
-| All    | Integration testing + bugfixes | 3    |
+| Person | Task                                          |
+| ------ | ---------------------------------------------- |
+| 1      | System tray icon, IPC polish                   |
+| 2      | Expand pattern coverage, allowlist support     |
+| 3      | Text highlighting in modal, action buttons     |
+| 4      | Allowlist/blocklist UI, app-specific rules     |
+| 5      | End-to-end pass: copy -> toast -> modal -> action |
 
-**Sprint 4 (Week 4): Release**
+**Hour 14-20: Polish + Bugfix**
 
-| Person | Task                          | Days |
-| ------ | ----------------------------- | ---- |
-| All    | Final QA + bug fixes          | 3    |
-| 5      | Release candidate build       | 1    |
-| 5      | Documentation + release notes | 2    |
-| All    | Launch + monitoring           | 1    |
+| Person | Task                                     |
+| ------ | ----------------------------------------- |
+| 1      | Performance pass (latency, CPU)           |
+| 2      | Edge cases, false-positive tuning         |
+| 3      | Animation/visual polish                   |
+| 4      | Session activity view, UI cleanup         |
+| 5      | Cross-check on 2nd machine if possible    |
+| All    | Bugfix as issues surface                  |
+
+**Hour 20-24: Demo Prep**
+
+| Person | Task                                           |
+| ------ | ----------------------------------------------- |
+| All    | Freeze features, fix demo-blockers only          |
+| 5      | Prep demo script + fallback (recorded backup)    |
+| All    | Dry run the live demo at least once              |
 
 ---
 
@@ -641,32 +638,35 @@ Person 5 (Testing)
 ### Critical Path
 
 ```
-Week 1: Tauri setup + clipboard listener + core UI components
-  └─ Blocker: None (parallel work possible)
+Hour 0-2: Scaffold + agree on IPC/pattern/config formats
+  Blocker: None (parallel work possible once formats agreed)
 
-Week 2: Integration of components + pattern matching
-  └─ Blocker: Person 1 must define IPC format early
+Hour 2-8: Core detection loop working end-to-end (copy -> toast)
+  Blocker: Person 1 must ship IPC events early
 
-Week 3: Polish + cross-platform testing
-  └─ Blocker: All components must be functional
+Hour 8-14: Full integration - modal, settings, allowlist
+  Blocker: Core loop must be stable first
 
-Week 4: Release candidate + deployment
-  └─ Blocker: Installer signing + testing
+Hour 14-20: Polish + bugfix
+  Blocker: All components functional
+
+Hour 20-24: Demo prep, feature freeze
+  Blocker: None - just don't break anything
 ```
 
 ### Key Milestones
 
-- **End of Week 1:** Tauri scaffolding complete, clipboard listener working, toast appears
-- **End of Week 2:** Full integration, modal expandable, patterns matching, settings functional
-- **End of Week 3:** All platforms tested, installers built, polished animations
-- **End of Week 4:** MVP shipped (Windows, Mac, Linux installers signed + available)
+- **Hour 2:** Formats agreed, scaffold running, everyone unblocked
+- **Hour 8:** Core loop demoable - copy a secret, toast appears
+- **Hour 14:** Full flow demoable - toast -> modal -> Allow/Block/Edit, settings functional
+- **Hour 20:** Feature freeze, polish done
+- **Hour 24:** Demo-ready
 
 ### Assumptions
 
-- Team available full-time
-- Windows, Mac, Linux dev machines available
-- Code signing certificates for installer distribution
-- GitHub Actions free tier sufficient
+- Team co-located or on a call the full 24 hours
+- Single target platform for the demo (whichever OS the team's dev machines match - no cross-platform installers in 24hrs)
+- No code signing / installer distribution - run from dev build for the demo
 
 ---
 
@@ -709,7 +709,6 @@ regex = "1.x"
 arboard = "3.x"
 serde = { version = "1.x", features = ["derive"] }
 serde_json = "1.x"
-sqlx = { version = "0.7.x", features = ["runtime-tokio-native-tls", "sqlite"] }
 chrono = "0.4.x"
 ```
 
@@ -740,12 +739,11 @@ clipboard-guardian/
 │  │  └─ ActionButtons.tsx
 │  ├─ pages/
 │  │  ├─ Settings.tsx
-│  │  ├─ AuditLog.tsx
-│  │  └─ Dashboard.tsx
+│  │  └─ ActivityLog.tsx
 │  ├─ hooks/
 │  │  ├─ useClipboardEvent.ts
 │  │  ├─ useConfig.ts
-│  │  └─ useAuditLog.ts
+│  │  └─ useActivityLog.ts
 │  ├─ types/
 │  │  └─ index.ts
 │  ├─ App.tsx
@@ -758,7 +756,6 @@ clipboard-guardian/
 │  │  ├─ clipboard.rs            # Clipboard listener
 │  │  ├─ patterns.rs             # Pattern matching
 │  │  ├─ scanner.rs              # Scan orchestration
-│  │  ├─ audit.rs                # Audit logging
 │  │  ├─ ipc.rs                  # IPC definitions
 │  │  ├─ config.rs               # Config loading
 │  │  └─ lib.rs
@@ -849,10 +846,10 @@ Outputs installers:
 **Why:** Non-intrusive, gives users control, less annoying  
 **Trade-off:** Doesn't force prevention vs user autonomy
 
-### Decision 5: SQLite audit logging
+### Decision 5: JSON config, no database
 
-**Why:** Zero-config, file-based, can be exported to backend later  
-**Trade-off:** Limited query power on-device vs simplicity for MVP
+**Why:** Zero-config, no dependency, nothing to migrate/seed for a demo  
+**Trade-off:** No persistent audit trail across restarts vs simplicity + speed to build
 
 ---
 
@@ -860,65 +857,53 @@ Outputs installers:
 
 | Metric                          | Target                    | How to Measure                   |
 | ------------------------------- | ------------------------- | -------------------------------- |
-| **Sensitive pattern detection** | >95% accuracy on test set | Regex pattern test suite         |
-| **False positive rate**         | <2% on normal code        | User testing with real codebases |
-| **Detection latency**           | <100ms from copy          | Performance benchmark            |
-| **UI responsiveness**           | <50ms for modal open      | Browser dev tools                |
-| **App footprint**               | <100MB                    | File size post-install           |
-| **Memory usage**                | <50MB idle                | System monitor                   |
-| **CPU usage**                   | <1% background            | System monitor                   |
-| **Cross-platform**              | Windows, Mac, Linux       | Installer testing                |
-| **Pattern coverage**            | 20+ sensitive types       | Pattern library coverage         |
+| **Sensitive pattern detection** | Catches all demo scenarios | Manual test with prepared demo strings |
+| **False positive rate**         | Low enough for a clean demo | Manual test with normal code snippets |
+| **Detection latency**           | <100ms from copy          | Feels instant during demo        |
+| **UI responsiveness**           | <50ms for modal open      | Feels instant during demo        |
+| **Pattern coverage**            | 10+ sensitive types        | Pattern library coverage         |
 
 ---
 
 ## Next Steps
 
-### Immediate (This Week)
+### Immediate (First 2 Hours)
 
 1. [ ] Create GitHub repo from Tauri scaffold
-2. [ ] Team kickoff meeting (30 min)
-   - Agree on data structures (IPC payload, SQLite schema, config format)
-   - Assign code review pairs
-   - Establish communication channels
-3. [ ] Set up GitHub Actions CI/CD template
-4. [ ] Person 1 starts clipboard listener POC
-5. [ ] Person 2 starts pattern library
+2. [ ] Team kickoff (10-15 min)
+   - Agree on data structures (IPC payload, pattern JSON format, config format)
+   - Establish communication channel (Slack/Discord thread)
+3. [ ] Person 1 starts clipboard listener POC
+4. [ ] Person 2 starts pattern library
 
-### Week 1 Deliverables
+### Core Loop Deliverables (by Hour 8)
 
 1. [ ] Working clipboard listener (Person 1)
 2. [ ] IPC events flowing to React (Person 1)
 3. [ ] Toast notification appears (Person 3)
 4. [ ] Pattern library v1 (Person 2)
 5. [ ] Basic settings panel (Person 4)
-6. [ ] CI/CD pipeline working (Person 5)
 
-### Week 2 Deliverables
+### Integration Deliverables (by Hour 14)
 
 1. [ ] Modal opens with full text (Person 3)
 2. [ ] Text highlighting works (Person 3)
-3. [ ] Audit logger functional (Person 1)
-4. [ ] Severity levels working (Person 2)
-5. [ ] Settings save to SQLite (Person 4)
-6. [ ] Unit tests written (Person 5)
+3. [ ] Severity levels working (Person 2)
+4. [ ] Settings save to JSON config (Person 4)
+5. [ ] Allowlist/blocklist working end-to-end (Person 2, Person 4)
 
-### Week 3 Deliverables
+### Polish Deliverables (by Hour 20)
 
-1. [ ] All platforms tested (Windows, Mac, Linux)
-2. [ ] Animations polished
-3. [ ] Performance optimized
-4. [ ] Code signed for distribution
-5. [ ] E2E tests passing
-6. [ ] Release candidate built
+1. [ ] Animations polished
+2. [ ] Performance feels instant
+3. [ ] Session activity view working (Person 4)
+4. [ ] All demo scenarios tested manually
 
-### Week 4 Deliverables
+### Demo-Ready (by Hour 24)
 
-1. [ ] Final QA complete
-2. [ ] Release notes written
-3. [ ] Installers distributed
-4. [ ] Documentation published
-5. [ ] Post-launch monitoring
+1. [ ] Feature freeze
+2. [ ] Demo script + backup recording ready
+3. [ ] Dry run completed
 
 ---
 
@@ -926,8 +911,8 @@ Outputs installers:
 
 1. **Should we block clipboard on CRITICAL severity?** (Decision: No, warn + let user decide)
 2. **Can users suppress patterns permanently?** (Decision: Yes, via allowlist)
-3. **Is centralized backend required for MVP?** (Decision: No, Phase 2)
-4. **Should this run on startup automatically?** (Decision: Yes, installed + enabled by default)
+3. **Is a database required for MVP?** (Decision: No — JSON config + in-memory session activity is enough for a demo)
+4. **Should this run on startup automatically?** (Decision: Not needed for hackathon demo — launch manually)
 5. **How to handle false positives from legitimate code?** (Decision: Allowlist + Edit button)
 
 ---
@@ -938,7 +923,6 @@ Outputs installers:
 - **Regex Crate:** https://docs.rs/regex/
 - **Arboard (Clipboard):** https://docs.rs/arboard/
 - **Tauri Plugin Guide:** https://tauri.app/v1/guides/features/
-- **SQLx Documentation:** https://github.com/launchbadge/sqlx
 - **Shadcn/UI Components:** https://ui.shadcn.com/
 
 ---
@@ -947,7 +931,7 @@ Outputs installers:
 
 ### A. Pattern Examples (Full List)
 
-See `config/patterns.json` for complete list of 20+ patterns.
+See `config/patterns.json` for complete list of patterns.
 
 ### B. IPC Message Format
 
@@ -970,26 +954,9 @@ See `config/patterns.json` for complete list of 20+ patterns.
 }
 ```
 
-### C. SQLite Schema
+### C. Config File Format
 
-**Table: audit_logs**
-
-```sql
-CREATE TABLE audit_logs (
-  id INTEGER PRIMARY KEY,
-  timestamp DATETIME,
-  severity TEXT,
-  patterns TEXT, -- JSON array
-  matched_count INTEGER,
-  user_action TEXT, -- "allow", "block", "edit"
-  app_name TEXT,
-  full_text_hash TEXT
-);
-```
-
-### D. Config File Format
-
-See `config/patterns.json` and `config/default-config.json`
+See `config/patterns.json` and `config/default-config.json`. No database — all config is JSON, session activity is held in-memory and cleared on quit.
 
 ---
 
