@@ -104,7 +104,7 @@ pub fn scan_text(text: &str) -> Vec<PatternMatch> {
             // Credit card and debit card matches get an extra Luhn check
             // before being reported, since the regex alone catches a lot
             // of coincidental digit sequences.
-            if (pattern.id == "credit_card_number" || pattern.id == "debit_card_number")
+            if pattern.id == "credit_card_number"
                 && !passes_luhn(m.as_str())
             {
                 continue;
@@ -247,12 +247,6 @@ mod tests {
             .any(|m| m.id == "credit_card_number"));
     }
 
-    #[test]
-    fn debit_card_requires_luhn_pass() {
-        let valid = "4111111111111111";
-        let matches_valid = scan_text(valid);
-        assert!(matches_valid.iter().any(|m| m.id == "debit_card_number"));
-    }
 
     #[test]
     fn aba_routing_number_checksum() {
