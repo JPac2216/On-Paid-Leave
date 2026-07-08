@@ -32,6 +32,7 @@ async function showDesktopNotification(message, shouldSuppress = false) {
         body: message,
         onClick: () => {
           const window = getCurrentWindow();
+          window.unminimize().catch(() => {});
           window.show().catch(() => {});
           window.setFocus().catch(() => {});
           window.setAlwaysOnTop(true).catch(() => {});
@@ -56,6 +57,8 @@ function App() {
   const [redactedIds, setRedactedIds] = useState([]);
   const [confirmed, setConfirmed] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+  // Running total of PII items detected across every genuine copy this session.
+  const [totalPiiCaught, setTotalPiiCaught] = useState(0);
   // Set right before we write our own redacted text back to the clipboard, so
   // the resulting re-scan updates the underlying text without reverting the
   // confirmed (no-highlight) view or alerting the user to their own action.
@@ -96,6 +99,20 @@ function App() {
       unlisten.then((stop) => stop());
     };
   }, [notificationsEnabled]);
+
+  // Keep the background clipboard listener alive when the user closes the
+  // window -- minimize instead of quitting the app.
+  useEffect(() => {
+    const window = getCurrentWindow();
+    const unlisten = window.onCloseRequested(async (event) => {
+      event.preventDefault();
+      await window.minimize();
+    });
+
+    return () => {
+      unlisten.then((stop) => stop());
+    };
+  }, []);
 
   const locateDetections = (text, items) => {
     // Detections arrive in pattern-declaration order, not in the order they
@@ -268,17 +285,22 @@ function App() {
     const updatedText = buildCurrentText();
     setConfirmed(true);
 
+    // Check the actual final text rather than redactedIds bookkeeping, since
+    // "Redact all" replaces every match via a separate code path that
+    // doesn't go through redactedIds at all.
+    const stillPresentCount = detections.filter((item) =>
+      updatedText.includes(item.matched_text)
+    ).length;
+    const changesMade = detections.length - stillPresentCount;
+    if (changesMade > 0) {
+      setTotalPiiCaught((count) => count + changesMade);
+    }
+
     // The backend dedups clipboard changes by content hash, so it only
     // re-scans (and only emits an event) when the written-back text both
-    // differs from what's already on the clipboard AND still contains a
-    // match. Check the actual final text rather than redactedIds bookkeeping,
-    // since "Redact all" replaces every match via a separate code path that
-    // doesn't go through redactedIds at all.
+    // differs from what's already on the clipboard AND still contains a match.
     const textActuallyChanged = updatedText !== fullText;
-    const willStillContainMatches = detections.some((item) =>
-      updatedText.includes(item.matched_text)
-    );
-    selfTriggeredUpdateRef.current = textActuallyChanged && willStillContainMatches;
+    selfTriggeredUpdateRef.current = textActuallyChanged && stillPresentCount > 0;
 
     try {
       await invoke("set_clipboard_text", { text: updatedText });
@@ -346,6 +368,10 @@ function App() {
           />
           Disable desktop notifications
         </label>
+
+        <p style={{ marginTop: "2rem", fontSize: "0.9em", opacity: 0.8 }}>
+          Total PII items corrected: {totalPiiCaught}
+        </p>
       </main>
     </>
   );
