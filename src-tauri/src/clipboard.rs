@@ -47,6 +47,12 @@ pub fn spawn_listener(app_handle: AppHandle) {
                             println!("[clipboard] no sensitive patterns detected");
                         } else {
                             println!("[clipboard] {} pattern match(es) detected", matches.len());
+                            for matched in &matches {
+                                println!(
+                                    "[clipboard] detected {} [{}] -> {:?}",
+                                    matched.name, matched.severity, matched.matched_text
+                                );
+                            }
                         }
 
                         let _ = app_handle.emit(

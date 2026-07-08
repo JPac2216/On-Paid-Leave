@@ -6,7 +6,6 @@ import {
   requestPermission,
   sendNotification,
 } from "@tauri-apps/plugin-notification";
-import { listen } from "@tauri-apps/api/event";
 
 async function showDesktopNotification(message) {
   try {
@@ -35,27 +34,10 @@ async function showDesktopNotification(message) {
 }
 
 function App() {
-  const [clipboardText, setClipboardText] = useState("Waiting for clipboard changes...");
-  const [matches, setMatches] = useState([]);
+  const [backendMessage, setBackendMessage] = useState("Placeholder backend text");
 
   useEffect(() => {
-    let unlisten;
-
-    const setupListener = async () => {
-      unlisten = await listen("clipboard-changed", (event) => {
-        const payload = event.payload ?? {};
-        setClipboardText(payload.text ?? "");
-        setMatches(payload.matches ?? []);
-      });
-    };
-
-    setupListener();
-
-    return () => {
-      if (unlisten) {
-        unlisten();
-      }
-    };
+    setBackendMessage("Placeholder backend text");
   }, []);
 
   return (
@@ -69,17 +51,7 @@ function App() {
         }}
       >
         <h2>Current Clipboard:</h2>
-        <p>{clipboardText}</p>
-        <p>{matches.length} match(es) detected</p>
-        {matches.length > 0 ? (
-          <ul>
-            {matches.map((match) => (
-              <li key={`${match.id}-${match.byte_range?.[0]}-${match.byte_range?.[1]}`}>
-                {match.name} [{match.severity}] - {match.matched_text}
-              </li>
-            ))}
-          </ul>
-        ) : null}
+        <p>{backendMessage}</p>
       </section>
 
       <button type="button" onClick={() => showDesktopNotification("Test notification!")}>
