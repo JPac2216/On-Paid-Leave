@@ -102,7 +102,7 @@ pub fn spawn_listener(app_handle: AppHandle) {
                             let _ = app_handle.emit(SENSITIVE_DETECTED_EVENT, scan_result);
                         }
 
-                        let _ = app_handle.emit(CLIPBOARD_CHANGED_EVENT, ClipboardChanged { text });
+                        let _ = app_handle.emit(CLIPBOARD_CHANGED_EVENT, ClipboardChanged { text, matches });
                     }
                 }
             }
