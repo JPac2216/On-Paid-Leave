@@ -7,12 +7,15 @@ use arboard::Clipboard;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
+use crate::patterns::{scan_text, PatternMatch};
+
 const POLL_INTERVAL_MS: u64 = 300;
 const CLIPBOARD_CHANGED_EVENT: &str = "clipboard-changed";
 
 #[derive(Clone, Serialize)]
 pub struct ClipboardChanged {
     pub text: String,
+    pub matches: Vec<PatternMatch>,
 }
 
 /// Starts a dedicated background thread that owns the only `Clipboard` handle
@@ -39,7 +42,23 @@ pub fn spawn_listener(app_handle: AppHandle) {
                     if last_hash != Some(hash) {
                         last_hash = Some(hash);
                         println!("[clipboard] change detected ({} chars): {text}", text.len());
-                        let _ = app_handle.emit(CLIPBOARD_CHANGED_EVENT, ClipboardChanged { text });
+                        let matches = scan_text(&text);
+                        if matches.is_empty() {
+                            println!("[clipboard] no sensitive patterns detected");
+                        } else {
+                            println!("[clipboard] {} pattern match(es) detected", matches.len());
+                            for matched in &matches {
+                                println!(
+                                    "[clipboard] detected {} [{}] -> {:?}",
+                                    matched.name, matched.severity, matched.matched_text
+                                );
+                            }
+                        }
+
+                        let _ = app_handle.emit(
+                            CLIPBOARD_CHANGED_EVENT,
+                            ClipboardChanged { text, matches },
+                        );
                     }
                 }
             }
