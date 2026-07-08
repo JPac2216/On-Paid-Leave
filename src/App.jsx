@@ -1,7 +1,49 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import reactLogo from "./assets/react.svg";
 import { invoke } from "@tauri-apps/api/core";
+import { ToastContainer, toast } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
 import "./App.css";
+import {
+  isPermissionGranted,
+  requestPermission,
+  sendNotification,
+} from "@tauri-apps/plugin-notification";
+
+
+async function showDesktopNotification(message) {
+  try {
+    const hasPermission = await isPermissionGranted();
+    console.log("notification: isPermissionGranted ->", hasPermission);
+
+    let permission = hasPermission;
+    if (!permission) {
+      const requestedPermission = await requestPermission();
+      permission = requestedPermission === true || requestedPermission === "granted";
+      console.log("notification: requestPermission ->", requestedPermission);
+    }
+
+    if (permission) {
+      try {
+        await sendNotification({
+          title: "Safe Paste",
+          body: message,
+        });
+        console.log("notification: sent");
+      } catch (err) {
+        console.error("notification: sendNotification failed", err);
+        toast.warning("Desktop notification failed — showing in-app toast");
+        toast.info(message);
+      }
+    } else {
+      console.log("notification: permission not granted ->", permission);
+      toast.info(message);
+    }
+  } catch (err) {
+    console.error("notification: error", err);
+    toast.info(message);
+  }
+}
 
 function App() {
   const [greetMsg, setGreetMsg] = useState("");
@@ -15,6 +57,7 @@ function App() {
   return (
     <main className="container">
       <h1>Welcome to Tauri + React</h1>
+      <ToastContainer />
 
       <div className="row">
         <a href="https://vite.dev" target="_blank">
@@ -44,6 +87,10 @@ function App() {
         <button type="submit">Greet</button>
       </form>
       <p>{greetMsg}</p>
+
+      <button type="button" onClick={() => showDesktopNotification("Test notification!")}>
+        Show desktop notification
+      </button>
     </main>
   );
 }
