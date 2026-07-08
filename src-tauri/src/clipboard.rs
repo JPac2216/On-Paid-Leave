@@ -20,6 +20,7 @@ static SCAN_COUNTER: AtomicU64 = AtomicU64::new(0);
 #[derive(Clone, Serialize)]
 pub struct ClipboardChanged {
     pub text: String,
+    pub matches: Vec<PatternMatch>,
 }
 
 #[derive(Clone, Serialize)]
