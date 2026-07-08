@@ -1,0 +1,68 @@
+.settings {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 24px;
+  text-align: left;
+}
+
+.settings h1 {
+  font-size: 1.5rem;
+  margin-bottom: 16px;
+}
+
+.settings-section {
+  border: 1px solid #3a3a3a;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.settings-section h2 {
+  font-size: 1.1rem;
+  margin: 0 0 12px;
+}
+
+.settings-section h3 {
+  font-size: 0.9rem;
+  margin: 12px 0 6px;
+  opacity: 0.8;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 0;
+}
+
+.editable-list ul,
+.app-rules {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+}
+
+.editable-list li,
+.app-rules li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.editable-list li.empty,
+.app-rules li.empty {
+  opacity: 0.6;
+  font-style: italic;
+}
+
+.editable-list-add {
+  display: flex;
+  gap: 8px;
+}
+
+.editable-list-add input {
+  flex: 1;
+}
