@@ -1,9 +1,9 @@
 //! Pattern library and matching engine for Safe Paste.
 //!
 //! Loads pattern definitions from `config/patterns.json`, compiles each
-//! regex once, and scans arbitrary text for matches. Severity assignment
-//! is intentionally left as a placeholder here (`severity_placeholder`
-//! from the config) since the actual severity calculator plugs in later.
+//! regex once, and scans arbitrary text for matches. Severity values now
+//! come from Prudential's internal data classification sheet (Risk
+//! Category + Sensitivity Level), mapped into CRITICAL/HIGH/MEDIUM.
 
 use once_cell::sync::Lazy;
 use regex::Regex;
@@ -18,7 +18,7 @@ pub struct PatternDef {
     pub name: String,
     pub category: String,
     pub regex: String,
-    pub severity_placeholder: String,
+    pub severity: String,
     pub notes: String,
 }
 
@@ -33,7 +33,7 @@ pub struct CompiledPattern {
     pub id: String,
     pub name: String,
     pub category: String,
-    pub severity_placeholder: String,
+    pub severity: String,
     pub regex: Regex,
 }
 
@@ -43,7 +43,7 @@ pub struct PatternMatch {
     pub id: String,
     pub name: String,
     pub category: String,
-    pub severity_placeholder: String,
+    pub severity: String,
     pub matched_text: String,
     pub byte_range: (usize, usize),
 }
@@ -67,7 +67,7 @@ pub fn compile_patterns(config: &PatternConfig) -> Vec<CompiledPattern> {
                 id: def.id.clone(),
                 name: def.name.clone(),
                 category: def.category.clone(),
-                severity_placeholder: def.severity_placeholder.clone(),
+                severity: def.severity.clone(),
                 regex: re,
             }),
             Err(e) => {
@@ -101,7 +101,18 @@ pub fn scan_text(text: &str) -> Vec<PatternMatch> {
 
     for pattern in COMPILED_PATTERNS.iter() {
         for m in pattern.regex.find_iter(text) {
-            if pattern.id == "credit_card_number" && !passes_luhn(m.as_str()) {
+            // Credit card and debit card matches get an extra Luhn check
+            // before being reported, since the regex alone catches a lot
+            // of coincidental digit sequences.
+            if (pattern.id == "credit_card_number" || pattern.id == "debit_card_number")
+                && !passes_luhn(m.as_str())
+            {
+                continue;
+            }
+
+            // ABA routing numbers have a real checksum formula (not just
+            // "9 digits"), so validate it before reporting a match.
+            if pattern.id == "aba_routing_number" && !passes_aba_checksum(m.as_str()) {
                 continue;
             }
 
@@ -109,7 +120,7 @@ pub fn scan_text(text: &str) -> Vec<PatternMatch> {
                 id: pattern.id.clone(),
                 name: pattern.name.clone(),
                 category: pattern.category.clone(),
-                severity_placeholder: pattern.severity_placeholder.clone(),
+                severity: pattern.severity.clone(),
                 matched_text: m.as_str().to_string(),
                 byte_range: (m.start(), m.end()),
             });
@@ -119,7 +130,8 @@ pub fn scan_text(text: &str) -> Vec<PatternMatch> {
     matches
 }
 
-/// Standard Luhn checksum validation for credit-card-shaped digit strings.
+/// Standard Luhn checksum validation for credit/debit-card-shaped digit
+/// strings.
 fn passes_luhn(candidate: &str) -> bool {
     let digits: Vec<u32> = candidate.chars().filter_map(|c| c.to_digit(10)).collect();
     if digits.len() < 12 {
@@ -143,6 +155,20 @@ fn passes_luhn(candidate: &str) -> bool {
             }
         })
         .sum();
+
+    sum % 10 == 0
+}
+
+/// ABA routing number checksum: weights 3,7,1 repeated across the 9
+/// digits, summed, must be divisible by 10.
+fn passes_aba_checksum(candidate: &str) -> bool {
+    let digits: Vec<u32> = candidate.chars().filter_map(|c| c.to_digit(10)).collect();
+    if digits.len() != 9 {
+        return false;
+    }
+
+    let weights = [3, 7, 1, 3, 7, 1, 3, 7, 1];
+    let sum: u32 = digits.iter().zip(weights.iter()).map(|(d, w)| d * w).sum();
 
     sum % 10 == 0
 }
@@ -219,6 +245,60 @@ mod tests {
         assert!(!matches_invalid
             .iter()
             .any(|m| m.id == "credit_card_number"));
+    }
+
+    #[test]
+    fn debit_card_requires_luhn_pass() {
+        let valid = "4111111111111111";
+        let matches_valid = scan_text(valid);
+        assert!(matches_valid.iter().any(|m| m.id == "debit_card_number"));
+    }
+
+    #[test]
+    fn aba_routing_number_checksum() {
+        // 021000021 is a real, publicly documented Chase ABA routing number.
+        assert!(passes_aba_checksum("021000021"));
+        assert!(!passes_aba_checksum("123456789"));
+    }
+
+    #[test]
+    fn detects_us_ein_format() {
+        let config = test_config();
+        let compiled = compile_patterns(&config);
+        let pattern = compiled.iter().find(|p| p.id == "us_ein").unwrap();
+        assert!(pattern.regex.is_match("12-3456789"));
+    }
+
+    #[test]
+    fn detects_us_itin_format() {
+        let config = test_config();
+        let compiled = compile_patterns(&config);
+        let pattern = compiled.iter().find(|p| p.id == "us_itin").unwrap();
+        assert!(pattern.regex.is_match("912-70-1234"));
+        // Regular SSNs (not starting with 9, or wrong group range) should
+        // not match the ITIN pattern.
+        assert!(!pattern.regex.is_match("123-45-6789"));
+    }
+
+    #[test]
+    fn detects_alien_registration_number() {
+        let config = test_config();
+        let compiled = compile_patterns(&config);
+        let pattern = compiled
+            .iter()
+            .find(|p| p.id == "alien_registration_number")
+            .unwrap();
+        assert!(pattern.regex.is_match("A123-456-789"));
+        assert!(pattern.regex.is_match("A123456789"));
+    }
+
+    #[test]
+    fn detects_mac_address() {
+        let config = test_config();
+        let compiled = compile_patterns(&config);
+        let pattern = compiled.iter().find(|p| p.id == "mac_address").unwrap();
+        assert!(pattern.regex.is_match("00:1A:2B:3C:4D:5E"));
+        assert!(pattern.regex.is_match("00-1A-2B-3C-4D-5E"));
     }
 
     #[test]
