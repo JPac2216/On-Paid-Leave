@@ -16,7 +16,7 @@ fn get_backend_message() -> String {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-<<<<<<< Updated upstream
+        .plugin(tauri_plugin_notification::init())
         .invoke_handler(tauri::generate_handler![
             greet,
             clipboard::clear_clipboard,
@@ -26,10 +26,6 @@ pub fn run() {
             clipboard::spawn_listener(app.handle().clone());
             Ok(())
         })
-=======
-        .plugin(tauri_plugin_notification::init())
-        .invoke_handler(tauri::generate_handler![greet, get_backend_message])
->>>>>>> Stashed changes
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

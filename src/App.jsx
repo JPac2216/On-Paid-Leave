@@ -1,6 +1,4 @@
 import { useEffect, useState } from "react";
-import { ToastContainer, toast } from "react-toastify";
-import "react-toastify/dist/ReactToastify.css";
 import "./App.css";
 import {
   isPermissionGranted,
@@ -21,24 +19,16 @@ async function showDesktopNotification(message) {
     }
 
     if (permission) {
-      try {
-        await sendNotification({
-          title: "Safe Paste",
-          body: message,
-        });
-        console.log("notification: sent");
-      } catch (err) {
-        console.error("notification: sendNotification failed", err);
-        toast.warning("Desktop notification failed — showing in-app toast");
-        toast.info(message);
-      }
+      await sendNotification({
+        title: "Safe Paste",
+        body: message,
+      });
+      console.log("notification: sent");
     } else {
       console.log("notification: permission not granted ->", permission);
-      toast.info(message);
     }
   } catch (err) {
     console.error("notification: error", err);
-    toast.info(message);
   }
 }
 
@@ -51,8 +41,6 @@ function App() {
 
   return (
     <main className="container">
-      <ToastContainer />
-
       <section
         style={{
           marginBottom: "1rem",
