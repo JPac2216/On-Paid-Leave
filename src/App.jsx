@@ -1,3 +1,4 @@
+import Settings from "./pages/Settings";
 import { useEffect, useState } from "react";
 import "./App.css";
 import {
