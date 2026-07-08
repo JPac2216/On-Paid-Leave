@@ -60,7 +60,6 @@ function App() {
         category: "api_key",
         severity: "CRITICAL",
         matched_text: "sk_live_4eC39HqLyjWDarhtT657j41F",
-        byte_range: [19, 51],
       },
       {
         id: "credit_card_number",
@@ -68,7 +67,6 @@ function App() {
         category: "financial",
         severity: "HIGH",
         matched_text: "4111111111111111",
-        byte_range: [58, 74],
       },
     ],
     timestamp: "2026-07-08T13:40:00Z",
