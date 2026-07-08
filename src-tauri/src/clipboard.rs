@@ -7,12 +7,22 @@ use arboard::Clipboard;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
+use crate::patterns::{self, PatternMatch};
+
 const POLL_INTERVAL_MS: u64 = 300;
 const CLIPBOARD_CHANGED_EVENT: &str = "clipboard-changed";
+const SENSITIVE_DETECTED_EVENT: &str = "sensitive-content-detected";
 
 #[derive(Clone, Serialize)]
 pub struct ClipboardChanged {
     pub text: String,
+}
+
+#[derive(Clone, Serialize)]
+pub struct SensitiveDetection {
+    pub text: String,
+    pub severity: String,
+    pub matches: Vec<PatternMatch>,
 }
 
 /// Starts a dedicated background thread that owns the only `Clipboard` handle
@@ -39,6 +49,30 @@ pub fn spawn_listener(app_handle: AppHandle) {
                     if last_hash != Some(hash) {
                         last_hash = Some(hash);
                         println!("[clipboard] change detected ({} chars): {text}", text.len());
+
+                        let matches = patterns::scan_text(&text);
+                        if matches.is_empty() {
+                            println!("[scanner] no sensitive patterns matched");
+                        } else {
+                            let severity = highest_severity(&matches);
+                            println!("[scanner] SENSITIVE DATA DETECTED - severity: {severity}");
+                            for m in &matches {
+                                println!(
+                                    "[scanner]   - {} ({}) [{}]: {:?}",
+                                    m.name, m.id, m.severity, m.matched_text
+                                );
+                            }
+
+                            let _ = app_handle.emit(
+                                SENSITIVE_DETECTED_EVENT,
+                                SensitiveDetection {
+                                    text: text.clone(),
+                                    severity,
+                                    matches,
+                                },
+                            );
+                        }
+
                         let _ = app_handle.emit(CLIPBOARD_CHANGED_EVENT, ClipboardChanged { text });
                     }
                 }
@@ -53,6 +87,23 @@ fn hash_text(text: &str) -> u64 {
     let mut hasher = DefaultHasher::new();
     text.hash(&mut hasher);
     hasher.finish()
+}
+
+fn highest_severity(matches: &[PatternMatch]) -> String {
+    matches
+        .iter()
+        .max_by_key(|m| severity_rank(&m.severity))
+        .map(|m| m.severity.clone())
+        .unwrap_or_else(|| "NONE".to_string())
+}
+
+fn severity_rank(severity: &str) -> u8 {
+    match severity {
+        "CRITICAL" => 3,
+        "HIGH" => 2,
+        "MEDIUM" => 1,
+        _ => 0,
+    }
 }
 
 #[tauri::command]
